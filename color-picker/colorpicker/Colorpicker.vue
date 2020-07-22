@@ -10,9 +10,10 @@
             <div class="arrow" :style="{ top: arrowTop + 'px' }"></div>
          </div>
       </div>
-      <div class="value" title="Скопировать" @click="copy">{{ this.color }}
+      <div class="value" title="Скопировать">
+         <input class="hex__input" type="text" v-bind:value="colorValue ? colorValue : color" maxlength="7" @input="writeColor">
          <div class="done__arrow"></div>      
-         <div class="final__color" :style="{ background: color }"></div>   
+         <div class="final__color" :style="{ background: color[0] == '#' ? color : '#' + color }"></div>   
       </div> 
       <div class="value" title="Скопировать" @click="copy">{{ this.rgbaColor }}
          <div class="done__arrow"></div>      
@@ -88,6 +89,17 @@
       text-shadow: 1px 1px 2px rgba(0,0,0,.3);
    }
 
+   .hex__input {
+      outline: none;
+      border: none;
+      color: #333;
+      font-size: 16px;
+      font-weight: bold;
+      max-width: 90px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,.3);
+      text-transform: uppercase;
+   }
+
    .done__arrow {
       width: 7px;
       border-radius: 2px;
@@ -133,16 +145,74 @@
 <script>
 import Range from '../range/Range'
    export default {
+      props: ['comesColor'],
       components: {
          Range
       },
       data() {
          return {
+            colorValue: '',
+            color: '',
+            rgbaColor: '',
+            alpha: .3,
+            top: '',
+            left: '',
+            arrowTop: '',
+            coordsByColor(color) {
+               let canvas2 = this.$refs.canvas2
+               let canvas = this.$refs.canvas
+               let rgb = this.hexToRgb(color)                                                         
+               let hsv = this.rgbToHsv(rgb.r, rgb.g, rgb.b);
+               
+               if((canvas2.width * hsv.s) == 0) {
+                  this.left = 3
+               }else {
+                  this.left = (canvas2.width * hsv.s)
+               }
+
+               this.top = canvas2.height * (1 - hsv.v)
+
+               if((canvas.height * (1 - hsv.h / 360)) == 0) {
+                  this.arrowTop = 5
+               }else if( (canvas.height * (1 - hsv.h / 360)) == canvas.height) {
+                  this.arrowTop = 199
+               }else {
+                  this.arrowTop = (canvas.height * (1 - hsv.h / 360))
+               }
+               this.finalColor()
+            },
             toHex(n) {
                n = parseInt(n,10);
                if (isNaN(n)) return "00";
                n = Math.max(0,Math.min(n,255));
-               return "0123456789ABCDEF".charAt((n-n%16)/16)  + "0123456789ABCDEF".charAt(n%16);
+               return "0123456789ABCDEF".charAt((n-n%16)/16) + "0123456789ABCDEF".charAt(n%16);
+            },
+            hexToRgb(hex) {
+               let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+               return result ? {
+                  r: parseInt(result[1], 16),
+                  g: parseInt(result[2], 16),
+                  b: parseInt(result[3], 16)
+               } : null;
+            },
+            rgbToHsv(r, g, b) {
+               r /= 255, g /= 255, b /= 255;
+               let max = Math.max(r, g, b), min = Math.min(r, g, b);
+               let h, s, v = max;
+               let d = max - min;
+               s = max == 0 ? 0 : d / max;
+
+               if (max == min) {
+                  h = 0;
+               } else {
+                  switch (max) {
+                     case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                     case g: h = (b - r) / d + 2; break;
+                     case b: h = (r - g) / d + 4; break;
+                  }
+                  h /= 6;
+               }
+               return { h: h * 360, s: s, v: v };
             },
             colorsInit() {
                let canvas = this.$refs.canvas
@@ -157,9 +227,21 @@ import Range from '../range/Range'
 
                let grdWhite = ctx2.createLinearGradient(0, 0, width2, 0);
                let grdBlack = ctx2.createLinearGradient(0, 0, 0, height2);
-                        
-               ctx.drawImage(this.img, 0, 0, width, height);
-                                           
+
+               ctx.rect(0, 0, width, height);
+               var grd1 = ctx.createLinearGradient(0, 0, 0, height);
+               
+               grd1.addColorStop(0,    "rgb(255,   0,   0)");
+               grd1.addColorStop(0.15, "rgb(255,   0, 255)");
+               grd1.addColorStop(0.33, "rgb(0,     0, 255)");
+               grd1.addColorStop(0.50, "rgb(0,   255, 255)");
+               grd1.addColorStop(0.67, "rgb(0,   255,   0)");
+               grd1.addColorStop(0.81, "rgb(255, 255,   0)");
+               grd1.addColorStop(1,    "rgb(255,   0,   0)");
+            
+               ctx.fillStyle = grd1;
+               ctx.fill();
+                                                     
                grdWhite.addColorStop(0, 'rgba(255,255,255,1)');
                grdWhite.addColorStop(1, 'rgba(255,255,255,0)');
                ctx2.fillStyle = grdWhite;
@@ -169,39 +251,40 @@ import Range from '../range/Range'
                grdBlack.addColorStop(1, 'rgba(0,0,0,1)');
                ctx2.fillStyle = grdBlack;
                ctx2.fillRect(0, 0, width2, height2);
-            },
-            color: '',
-            rgbaColor: '',
-            alpha: .3,
-            top: 9,
-            left: 290,
-            arrowTop: 136
+            }
          }
       },
       watch: {
-         rgbaColor(value) {
-            this.$emit('setColor', value)
+         rgbaColor(rgba) {
+            this.$emit('onRgbaColor', rgba)
          }
       },
       methods: {
+         writeColor(e) {
+            this.colorValue = e.target.value[0] == '#' ? e.target.value : '#' + e.target.value
+            let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(this.colorValue);
+
+            if(result && result.length) {
+               this.coordsByColor(this.colorValue)
+            }       
+            this.$emit('onInputColor', this.colorValue);
+         },
          setAlpha(value) {
             this.alpha = (value / 100).toFixed(2)
             this.finalColor()
          },
          moveDot(e) {
+            this.colorValue = ''
             this.left = e.offsetX
             this.top = e.offsetY
             this.finalColor(e)
             window.addEventListener('mousemove', this.finalColor);
          },
          setColor(e) {
+            this.colorValue = ''
             this.arrowTop = e.clientY - e.currentTarget.getBoundingClientRect().top
             window.addEventListener('mousemove', this.moveArrow)
-            this.chooseColor()
             this.finalColor()
-         },
-         touchArrow(e) {
-            
          },
          moveArrow(e) {
             let canvas = this.$refs.canvas
@@ -214,7 +297,6 @@ import Range from '../range/Range'
             }else {
                this.arrowTop = distTop
             }
-            this.chooseColor()
             this.finalColor()
          },
          chooseColor(e) {
@@ -226,7 +308,6 @@ import Range from '../range/Range'
                this.arrowTop = e.offsetY;
             }
             let imageData = ctx.getImageData(0, this.arrowTop, 1, 1).data;
-            // let rgbColor = 'rgba(' + imageData[0] + ',' + imageData[1] + ',' + imageData[2] + ',1)';
             let hexColor = '#' + this.toHex(imageData[0]) + this.toHex(imageData[1]) + this.toHex(imageData[2]);
             let grdBlack = ctx2.createLinearGradient(0, 0, 0, canvas2.height);    
             let grdWhite = ctx2.createLinearGradient(0, 0, canvas2.width, 0);
@@ -245,7 +326,7 @@ import Range from '../range/Range'
             ctx2.fillRect(0, 0, canvas2.width, canvas2.height);           
          },
          finalColor(e) {
-                       
+            this.chooseColor()
             let colorBlock = this.$refs.canvas2;
             let ctx = colorBlock.getContext('2d');
             
@@ -302,15 +383,10 @@ import Range from '../range/Range'
          this.moveArrow = this.moveArrow.bind(this);
       },
       mounted() {
-         this.img = new Image();
-         this.img.src = '/src/elements/colorpicker/img/gradient.png';
-       
-         this.img.onload = () => {
-            this.colorsInit()             
-            this.chooseColor()
-            this.finalColor()
-         }
-                  
+         this.colorValue = this.comesColor ? this.comesColor : '#2B6DCF'
+         this.colorsInit()           
+         this.coordsByColor(this.comesColor ? this.comesColor : this.colorValue) 
+                                                                 
          window.addEventListener('mouseup', e => {
             window.removeEventListener('mousemove', this.finalColor);
             window.removeEventListener('mousemove', this.moveArrow)          
